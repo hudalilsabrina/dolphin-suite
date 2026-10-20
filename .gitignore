@@ -1,0 +1,8 @@
+__pycache__/
+*.session
+*.session-journal
+data/*.json
+data/*.txt
+!data/.gitkeep
+!sessions/.gitkeep
+

@@ -1,0 +1,17 @@
+{
+  "api_id": 2040,
+  "api_hash": "b18441a1ff607e10a989891a5462e627",
+  "coupon_code": "API10",
+  "key_name": "hermes-dolphin",
+  "sessions_dir": "sessions",
+  "wallets_file": "data/dolphin_wallets.json",
+  "results_file": "data/dolphin_results.json",
+  "keys_file": "data/keys.txt",
+  "base_url": "https://v2.dphn.ai",
+  "inference_url": "https://lighthouse.dphn.ai/run/text-v/v1",
+  "model": "deepseek-ai/DeepSeek-V4.1-Flash",
+  "bot_username": "DolphinNM_bot",
+  "poll_tries": 15,
+  "poll_delay": 3,
+  "auto_submit_9router": true
+}

@@ -1,0 +1,4 @@
+eth-account>=0.14.0
+pyrogram>=2.0.106
+pyaes==1.6.1
+requests>=2.31.0
