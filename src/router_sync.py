@@ -1,6 +1,6 @@
 """
 9Router Sync Module for Dolphin AI (dphn.ai).
-Ensures Dolphin AI provider node exists and inserts active API keys into SQLite database.
+Ensures Dolphin AI provider node, custom models, and connection data match 9Router's exact schema.
 """
 
 from __future__ import annotations
@@ -18,8 +18,9 @@ from typing import Optional
 logger = logging.getLogger("DolphinRouterSync")
 
 DOLPHIN_NODE_ID = "openai-compatible-chat-dolphin"
+DOLPHIN_PREFIX = "dphn"
 DOLPHIN_BASE_URL = "https://lighthouse.dphn.ai/run/text-v/v1"
-DOLPHIN_MODEL = "deepseek-ai/DeepSeek-V4.1-Flash"
+DOLPHIN_MODEL_ID = "deepseek-ai/DeepSeek-V4.1-Flash"
 
 
 def get_9router_db_path() -> Path:
@@ -40,32 +41,51 @@ def get_9router_db_path() -> Path:
 
 
 def ensure_dolphin_node_exists(conn: sqlite3.Connection) -> None:
-    """Creates Dolphin AI OpenAI-compatible node in 9Router if not present."""
+    """Creates or updates Dolphin AI providerNode & custom model in 9Router."""
     cur = conn.cursor()
-    cur.execute("SELECT id FROM providerNodes WHERE id = ?", (DOLPHIN_NODE_ID,))
-    if cur.fetchone():
-        return
-
     now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
     node_data = {
+        "prefix": DOLPHIN_PREFIX,
+        "apiType": "chat",
         "baseUrl": DOLPHIN_BASE_URL,
-        "compatibility": "openai",
-        "prefix": "dphn",
-        "models": [
-            {
-                "id": DOLPHIN_MODEL,
-                "name": "DeepSeek V4.1 Flash ($0.01/$0.07)"
-            }
-        ]
+        "logo": ""
     }
 
+    # 1. Upsert providerNodes
     cur.execute(
         """INSERT INTO providerNodes (id, type, name, data, createdAt, updatedAt)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             type=excluded.type, name=excluded.name, data=excluded.data, updatedAt=excluded.updatedAt""",
         (DOLPHIN_NODE_ID, "openai-compatible", "Dolphin AI", json.dumps(node_data), now_iso, now_iso)
     )
+
+    # 2. Register model in kv (customModels) so 9Router router engine knows about it
+    model_kv = {
+        "providerAlias": DOLPHIN_PREFIX,
+        "id": DOLPHIN_MODEL_ID,
+        "type": "llm",
+        "name": DOLPHIN_MODEL_ID,
+        "caps": {
+            "vision": False,
+            "reasoning": False,
+            "thinkDeeper": False,
+            "speedMode": False,
+            "jsonGuard": False,
+            "contextSqueezer": False
+        }
+    }
+    kv_key = f"{DOLPHIN_PREFIX}|{DOLPHIN_MODEL_ID}|llm"
+    cur.execute(
+        """INSERT INTO kv (scope, key, value)
+           VALUES (?, ?, ?)
+           ON CONFLICT(scope, key) DO UPDATE SET value=excluded.value""",
+        ("customModels", kv_key, json.dumps(model_kv))
+    )
+
     conn.commit()
-    logger.info("Created Dolphin AI providerNode in 9Router.")
+    logger.info("Ensured Dolphin AI providerNode & customModel in 9Router.")
 
 
 def submit_dolphin_key_to_9router(
@@ -81,8 +101,18 @@ def submit_dolphin_key_to_9router(
 
     now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     conn_data = {
+        "defaultModel": f"{DOLPHIN_PREFIX}/{DOLPHIN_MODEL_ID}",
         "apiKey": api_key,
         "testStatus": "active",
+        "providerSpecificData": {
+            "prefix": DOLPHIN_PREFIX,
+            "apiType": "chat",
+            "baseUrl": DOLPHIN_BASE_URL,
+            "nodeName": "Dolphin AI",
+            "connectionProxyEnabled": False,
+            "connectionProxyUrl": "",
+            "connectionNoProxy": ""
+        },
         "lastError": None,
         "lastErrorAt": None,
         "errorCode": None,
@@ -90,11 +120,10 @@ def submit_dolphin_key_to_9router(
     }
 
     try:
-        conn = sqlite3.connect(str(target_path), timeout=20.0)
+        conn = sqlite3.connect(str(target_path), timeout=25.0)
         ensure_dolphin_node_exists(conn)
 
         cur = conn.cursor()
-        # Check existing connection
         cur.execute(
             "SELECT id, data FROM providerConnections WHERE provider = ?",
             (DOLPHIN_NODE_ID,)
